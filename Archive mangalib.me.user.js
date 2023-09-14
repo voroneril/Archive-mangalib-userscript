@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Archive mangalib.me
 // @namespace    https://github.com/JumpJets/Archive-mangalib-userscript
-// @version      1.2
+// @version      1.3
 // @description  Download manga from mangalib.me and hentailib.me as archived zip.
 // @author       X4
 // @include      /^https?:\/\/(?:manga|hentai)lib\.me\/[\w\-]+(?:\?.+|#.*)?$/
@@ -286,6 +286,9 @@
 </script>
 </body>
 </html>`;
+        let sleep = function(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
 
 		const zip = new JSZip(),
 			  chapters = window?.__DATA__?.chapters?.list?.reverse?.() ?? [],
@@ -330,6 +333,7 @@
 					tmp_img.onerror = () => reject((b ? `${b}/` : "") + `${f}/${n}`);
 					// document.body.appendChild(tmp_img);
 				});
+                await sleep(1000)
 				ch_promises.push(pr);
 			}
 
