@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Archive mangalib.me
 // @namespace    https://github.com/JumpJets/Archive-mangalib-userscript
-// @version      1.3
+// @version      1.4
 // @description  Download manga from mangalib.me and hentailib.me as archived zip.
 // @author       X4
 // @include      /^https?:\/\/(?:manga|hentai)lib\.me\/[\w\-]+(?:\?.+|#.*)?$/
@@ -12,10 +12,86 @@
 
 (function() {
 	"use strict";
-
 	const dl_archive = async (e) => {
-		const ftch = async (url) => { const resp = await fetch(url, {method: "GET"}); return await resp.text() };
-		const ftchi = async (url) => { const resp = await fetch(url, {method: "GET"}); return await resp.blob() };
+
+        const fetchRetry = function (...args) {
+
+            const RETRY_COUNT = 5;
+
+            async function fetchRetry(...args) {
+              let count = RETRY_COUNT;
+              while(count > 0) {
+                try {
+                  const resp = await fetch(...args);
+                  return resp;
+                } catch(error) {
+                  // logging ?
+                }
+
+                // logging / waiting?
+
+                count -= 1;
+              }
+
+              throw new Error(`Too many retries`);
+            }
+        }
+
+		const ftch = async (url) => {
+            const RETRY_COUNT = 5;
+
+            let fetchRetry = async function (...args) {
+              let count = RETRY_COUNT;
+              while(count > 0) {
+                try {
+                  const resp = await fetch(...args);
+                  let text = await resp.text()
+                  if (text) {
+                    return text;
+                  }
+                } catch(error) {
+                  // logging ?
+                }
+
+                // logging / waiting?
+
+                count -= 1;
+              }
+
+              throw new Error(`Too many retries`);
+            }
+
+            const resp = await fetchRetry(url, {method: "GET"});
+
+            return resp;
+        };
+		const ftchi = async (url) => {
+            const RETRY_COUNT = 5;
+
+            let fetchRetry = async function (...args) {
+              let count = RETRY_COUNT;
+              while(count > 0) {
+                try {
+                  const resp = await fetch(...args);
+                  let blob = await resp.blob()
+                  if (blob) {
+                    return blob;
+                  }
+                } catch(error) {
+                  // logging ?
+                }
+
+                // logging / waiting?
+
+                count -= 1;
+              }
+
+              throw new Error(`Too many retries`);
+            }
+
+            const resp = await fetchRetry(url, {method: "GET"});
+            return resp;
+        };
 
 		const html_template = (title, chapters, imgs, manga_type) => `<!DOCTYPE html>
 <html>
@@ -290,18 +366,36 @@
             return new Promise(resolve => setTimeout(resolve, ms));
         }
 
-		const zip = new JSZip(),
-			  chapters = window?.__DATA__?.chapters?.list?.reverse?.() ?? [],
-			  last = chapters[chapters.length - 1],
-			  title = window?.__DATA__?.manga?.rusName ?? window?.__DATA__?.manga?.name, // document.querySelector(".media-name__main").innerText,
-			  html_idata = [];
+		const zip = new JSZip();
+
+		let chapters = window?.__DATA__?.chapters?.list?.reverse?.() ?? [];
+
+        let params = new URLSearchParams(document.location.search);
+        let bid_param = params.get("bid");
+        if(bid_param) {
+            bid_param = parseInt(bid_param);
+            chapters = chapters.filter((x) => x.branch_id == bid_param)
+        }
+
+		let last = chapters[chapters.length - 1];
+		let title = window?.__DATA__?.manga?.rusName ?? window?.__DATA__?.manga?.name; // document.querySelector(".media-name__main").innerText,
+		let html_idata = [];
+
 		let manga_type = null;
 
 		for (let c of chapters) {
 			console.log(`DL volume ${c.chapter_volume} chapter ${c.chapter_number} (branch ${c.branch_id}) of volume ${last.chapter_volume} chapter ${last.chapter_number}`);
-
-			const url = `${window.location.origin}${window.location.pathname}/v${c.chapter_volume}/c${c.chapter_number}` + (c.branch_id ? `?bid=${c.branch_id}` : ""),
-				  [s_data, s_pg] = await ftch(url).then((text) => { const p = new DOMParser(), doc = p.parseFromString(text, "text/html"); return [Array.from(doc.querySelectorAll("script")).filter(s => /window\.__DATA__/.test(s.innerText))[0], Array.from(doc.querySelectorAll("script")).filter(s => /window\.__pg/.test(s.innerText))[0]]; }),
+			let url
+			if(typeof window.__DATA__ != 'undefined' && typeof window.__DATA__.user != 'undefined' && typeof window.__DATA__.user.id != 'undefined') {
+				url = `${window.location.origin}${window.location.pathname}/v${c.chapter_volume}/c${c.chapter_number}` + '?ui=' + window.__DATA__.user.id + (c.branch_id ? `&bid=${c.branch_id}` : "");
+            } else {
+				url = `${window.location.origin}${window.location.pathname}/v${c.chapter_volume}/c${c.chapter_number}` + (c.branch_id ? `?bid=${c.branch_id}` : "");
+            }
+			const [s_data, s_pg] = await ftch(url).then((text) => { const p = new DOMParser(), doc = p.parseFromString(text, "text/html");
+				  return [
+					  Array.from(doc.querySelectorAll("script")).filter(s => /window\.__DATA__/.test(s.innerText))[0],
+					  Array.from(doc.querySelectorAll("script")).filter(s => /window\.__pg/.test(s.innerText))[0]
+				  ]; }),
 				  ch_data = JSON.parse(s_data.innerText.match(/(?<=window\.__DATA__\s*=\s*){.+}/)[0]),
 				  ch_info = JSON.parse(s_data.innerText.match(/(?<=window\.__info\s*=\s*){.+}/)[0]), // media type for manga 1, webtoon 5
 				  ch_imgs = JSON.parse(s_pg.innerText.match(/(?<=window\.__pg\s*=\s*)\[.+\]/)[0]),
@@ -311,9 +405,10 @@
 			if (!manga_type) manga_type = ch_info?.media?.type ?? 1;
 			for (let img of ch_imgs) {
 				// console.debug(`DL img ${img.p} ${img.u}`);
+                //console.log('ch_info.servers', ch_info.servers);
 
-				const pr = new Promise((resolve, reject) => {
-					const iurl = `${ch_info.servers.secondary}/${ch_info.img.url}${img.u}`,
+				const pr = await new Promise((resolve, reject) => {
+					const iurl = `${ch_info.servers.main}/${ch_info.img.url}${img.u}`,
 						  b = c.branch_id ? `team${c.branch_id}` : null,
 						  f = `v${c.chapter_volume}_${(+c.chapter_number).toLocaleString("en-US", {minimumIntegerDigits: 3, useGrouping: false})}`,
 						  n = `${img.p.toLocaleString("en-US", {minimumIntegerDigits: 3, useGrouping: false})}.${img.u.split(".")[1]}`,
@@ -333,7 +428,7 @@
 					tmp_img.onerror = () => reject((b ? `${b}/` : "") + `${f}/${n}`);
 					// document.body.appendChild(tmp_img);
 				});
-                await sleep(1000)
+                //await sleep(1000)
 				ch_promises.push(pr);
 			}
 
