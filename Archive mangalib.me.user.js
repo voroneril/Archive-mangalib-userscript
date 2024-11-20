@@ -1,10 +1,10 @@
 // ==UserScript==
-// @name         Archive mangalib.me
+// @name         Archive old.mangalib.me
 // @namespace    https://github.com/JumpJets/Archive-mangalib-userscript
-// @version      1.4
-// @description  Download manga from mangalib.me and hentailib.me as archived zip.
+// @version      2.0
+// @description  Download manga from old.mangalib.me and old.hentailib.me as archived zip.
 // @author       X4
-// @include      /^https?:\/\/(?:manga|hentai)lib\.me\/[\w\-]+(?:\?.+|#.*)?$/
+// @include      /^https?:\/\/old\.(?:manga|hentai)lib\.me\/old\/manga\/[\w\-]+(?:\?.+|#.*)?$/
 // @icon         https://icons.duckduckgo.com/ip2/mangalib.me.ico
 // @require      https://cdnjs.cloudflare.com/ajax/libs/jszip/3.9.1/jszip.min.js
 // @grant        none
@@ -368,51 +368,86 @@
 
 		const zip = new JSZip();
 
-		let chapters = window?.__DATA__?.chapters?.list?.reverse?.() ?? [];
+		let CONTENT = window?.__CONTENT__;
+        let chapters = [];
 
         let params = new URLSearchParams(document.location.search);
         let bid_param = params.get("bid");
         if(bid_param) {
             bid_param = parseInt(bid_param);
-            chapters = chapters.filter((x) => x.branch_id == bid_param)
+            for (let chptr of CONTENT) {
+                for (let branch of CONTENT.branches) {
+                    if(bid_param == branch.branch_id) {
+                        chptr.branch_id = bid_param;
+                        chptr.chapter_number = chptr.number;
+                        chptr.chapter_volume = chptr.volume;
+                        chapters.push(chptr);
+                    }
+                }
+            }
+        } else {
+            for (let chptr of CONTENT) {
+                chptr.chapter_number = chptr.number;
+                chptr.chapter_volume = chptr.volume;
+                chapters.push(chptr);
+            }
         }
+        //chapters = chapters.reverse()
 
 		let last = chapters[chapters.length - 1];
-		let title = window?.__DATA__?.manga?.rusName ?? window?.__DATA__?.manga?.name; // document.querySelector(".media-name__main").innerText,
+		let title = document.querySelector(".media-name__alt").innerText;
+        let cover_src = document.querySelector(".media-cover__img").src;
+        cover_src = cover_src + "?not-from-cache-please";
 		let html_idata = [];
 
 		let manga_type = null;
 
-		for (let c of chapters) {
-			console.log(`DL volume ${c.chapter_volume} chapter ${c.chapter_number} (branch ${c.branch_id}) of volume ${last.chapter_volume} chapter ${last.chapter_number}`);
+        let cover_img = new Image();
+        cover_img.src = cover_src;
+        cover_img.onload = async (e) => {
+            const iblob = await ftchi(cover_src).then((blb) => blb).catch((error) => {console.log(error)});
+            let ext = cover_src.split('.')[ cover_src.split('.').length - 1 ];
+            ext = ext.replace("?not-from-cache-please", '');
+            zip.file('cover.' + ext, iblob);
+        }
+        cover_img.onerror = () => reject((b ? `${b}/` : "") + `${f}/${n}`);
+
+		for (let chptr of chapters) {
+			console.log(`DL volume ${chptr.chapter_volume} chapter ${chptr.chapter_number} (branch ${chptr.branch_id}) of volume ${last.chapter_volume} chapter ${last.chapter_number}`);
 			let url
-			if(typeof window.__DATA__ != 'undefined' && typeof window.__DATA__.user != 'undefined' && typeof window.__DATA__.user.id != 'undefined') {
-				url = `${window.location.origin}${window.location.pathname}/v${c.chapter_volume}/c${c.chapter_number}` + '?ui=' + window.__DATA__.user.id + (c.branch_id ? `&bid=${c.branch_id}` : "");
+			if(typeof window.__AUTH_ID__ != 'undefined') {
+                let pathname = window.location.pathname.replace('/manga', '')
+				url = `${window.location.origin}${pathname}/v${chptr.chapter_volume}/c${chptr.chapter_number}` + '?ui=' + window.__AUTH_ID__ + (chptr.branch_id ? `&bid=${chptr.branch_id}` : "");
             } else {
-				url = `${window.location.origin}${window.location.pathname}/v${c.chapter_volume}/c${c.chapter_number}` + (c.branch_id ? `?bid=${c.branch_id}` : "");
+                let pathname = window.location.pathname.replace('/manga', '')
+				url = `${window.location.origin}${pathname}/v${chptr.chapter_volume}/c${chptr.chapter_number}` + (chptr.branch_id ? `?bid=${c.branch_id}` : "");
             }
-			const [s_data, s_pg] = await ftch(url).then((text) => { const p = new DOMParser(), doc = p.parseFromString(text, "text/html");
-				  return [
-					  Array.from(doc.querySelectorAll("script")).filter(s => /window\.__DATA__/.test(s.innerText))[0],
-					  Array.from(doc.querySelectorAll("script")).filter(s => /window\.__pg/.test(s.innerText))[0]
-				  ]; }),
-				  ch_data = JSON.parse(s_data.innerText.match(/(?<=window\.__DATA__\s*=\s*){.+}/)[0]),
-				  ch_info = JSON.parse(s_data.innerText.match(/(?<=window\.__info\s*=\s*){.+}/)[0]), // media type for manga 1, webtoon 5
-				  ch_imgs = JSON.parse(s_pg.innerText.match(/(?<=window\.__pg\s*=\s*)\[.+\]/)[0]),
-				  ch_idata = [],
-				  ch_promises = [];
+
+            let s_data = await ftch(url).then((text) => {
+                let p = new DOMParser();
+                let doc = p.parseFromString(text, "text/html");
+                let scripts = Array.from(doc.querySelectorAll("script"))
+                let __info = scripts.filter(s => /window\.__info/.test(s.innerText))[0];
+                return __info;
+            });
+            let ch_info = JSON.parse(s_data.innerText.match(/(?<=window\.__info\s*=\s*){.+}/)[0]); // media type for manga 1, webtoon 5
+            let ch_idata = [];
+            let ch_promises = [];
 
 			if (!manga_type) manga_type = ch_info?.media?.type ?? 1;
-			for (let img of ch_imgs) {
+			for (let img of ch_info.pages) {
 				// console.debug(`DL img ${img.p} ${img.u}`);
-                //console.log('ch_info.servers', ch_info.servers);
+                // console.log('ch_info.servers', ch_info.servers);
+                let filename = img.image.split(".")[ img.image.split(".").length - 1 ]
 
 				const pr = await new Promise((resolve, reject) => {
-					const iurl = `${ch_info.servers.main}/${ch_info.img.url}${img.u}`,
-						  b = c.branch_id ? `team${c.branch_id}` : null,
-						  f = `v${c.chapter_volume}_${(+c.chapter_number).toLocaleString("en-US", {minimumIntegerDigits: 3, useGrouping: false})}`,
-						  n = `${img.p.toLocaleString("en-US", {minimumIntegerDigits: 3, useGrouping: false})}.${img.u.split(".")[1]}`,
+					let iurl = `${ch_info.servers.main}/${ch_info.img.url}${img.image}`,
+						  b = chptr.branch_id ? `team${chptr.branch_id}` : null,
+						  f = `v${chptr.chapter_volume}_${(+chptr.chapter_number).toLocaleString("en-US", {minimumIntegerDigits: 3, useGrouping: false})}`,
+						  n = `${img.slug.toLocaleString("en-US", {minimumIntegerDigits: 3, useGrouping: false})}.${filename}`,
 						  tmp_img = new Image();
+
+                    iurl = iurl.replace('//manga', '/manga');
 
 					ch_idata.push((b ? `${b}/` : "") + `${f}/${n}`);
 
@@ -438,13 +473,20 @@
 			console.log("DL result:", pr_results);
 		}
 
-		zip.file("index.html", html_template(title, chapters, html_idata, manga_type));
+		//zip.file("index.html", html_template(title, chapters, html_idata, manga_type));
+        let filename = title;
+        filename = filename.replaceAll('|', '｜');
+        filename = filename.replaceAll(':', '：');
+        filename = filename.replaceAll('?', '？');
+        filename = filename.replaceAll('/', '⧸');
+        filename = filename.replaceAll('"', '＂');
+        filename = filename.replaceAll('!', '！');
 
 		zip.generateAsync({type: "blob"}).then((blob) => {
 			const a = document.createElement("a");
 			console.log("ZIP size (bytes):", blob, "MB:", ((blob?.size ?? 0) / 1024 / 1024));
 			a.href = URL.createObjectURL(blob);
-			a.download = `${window.location.pathname.substring(window.location.pathname.lastIndexOf("/") + 1)}.zip`;
+			a.download = `${filename}.zip`;
 			a.click();
 		});
 	}
