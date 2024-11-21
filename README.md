@@ -1,5 +1,5 @@
-# Archive mangalib.me (userscript)
-Download manga from mangalib.me as archived zip.
+# Archive old.mangalib.me (userscript)
+Download manga from old.mangalib.me as archived zip.
 
 To install this sctipt you need browser addon such as **Tampermonkey** https://www.tampermonkey.net/
 

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Archive old.mangalib.me
 // @namespace    https://github.com/JumpJets/Archive-mangalib-userscript
-// @version      2.0
+// @version      2.1
 // @description  Download manga from old.mangalib.me and old.hentailib.me as archived zip.
 // @author       X4
 // @include      /^https?:\/\/old\.(?:manga|hentai)lib\.me\/old\/manga\/[\w\-]+(?:\?.+|#.*)?$/
@@ -369,6 +369,7 @@
 		const zip = new JSZip();
 
 		let CONTENT = window?.__CONTENT__;
+        let BRANCHES = window?.__BRANCHES__;
         let chapters = [];
 
         let params = new URLSearchParams(document.location.search);
@@ -376,7 +377,7 @@
         if(bid_param) {
             bid_param = parseInt(bid_param);
             for (let chptr of CONTENT) {
-                for (let branch of CONTENT.branches) {
+                for (let branch of chptr.branches) {
                     if(bid_param == branch.branch_id) {
                         chptr.branch_id = bid_param;
                         chptr.chapter_number = chptr.number;
@@ -387,15 +388,36 @@
             }
         } else {
             for (let chptr of CONTENT) {
-                chptr.chapter_number = chptr.number;
-                chptr.chapter_volume = chptr.volume;
-                chapters.push(chptr);
+                for (let branch of chptr.branches) {
+                    let clone = {};
+                    clone.chapter_number = chptr.number;
+                    clone.chapter_volume = chptr.volume;
+                    if(branch.branch_id) {
+                        clone.branch_id = branch.branch_id;
+                    }
+                    chapters.push(clone);
+                    //console.log(`Adding volume ${clone.chapter_volume} chapter ${clone.chapter_number} (branch ${clone.branch_id})`);
+                }
             }
         }
         //chapters = chapters.reverse()
 
 		let last = chapters[chapters.length - 1];
-		let title = document.querySelector(".media-name__alt").innerText;
+
+        let title;
+		let title1 = document.querySelector(".media-name__main").innerText;
+        let title2;
+
+        if(document.querySelector(".media-name__alt")) {
+            title2 = document.querySelector(".media-name__alt").innerText;
+        }
+
+        if(title2) {
+            title = title1 + ' (' + title2 + ')';
+        } else {
+            title = title1
+        }
+
         let cover_src = document.querySelector(".media-cover__img").src;
         cover_src = cover_src + "?not-from-cache-please";
 		let html_idata = [];
@@ -414,13 +436,14 @@
 
 		for (let chptr of chapters) {
 			console.log(`DL volume ${chptr.chapter_volume} chapter ${chptr.chapter_number} (branch ${chptr.branch_id}) of volume ${last.chapter_volume} chapter ${last.chapter_number}`);
-			let url
-			if(typeof window.__AUTH_ID__ != 'undefined') {
+
+            let url
+            if(typeof window.__AUTH_ID__ != 'undefined') {
                 let pathname = window.location.pathname.replace('/manga', '')
-				url = `${window.location.origin}${pathname}/v${chptr.chapter_volume}/c${chptr.chapter_number}` + '?ui=' + window.__AUTH_ID__ + (chptr.branch_id ? `&bid=${chptr.branch_id}` : "");
+                url = `${window.location.origin}${pathname}/v${chptr.chapter_volume}/c${chptr.chapter_number}` + '?ui=' + window.__AUTH_ID__ + (chptr.branch_id ? `&bid=${chptr.branch_id}` : "");
             } else {
                 let pathname = window.location.pathname.replace('/manga', '')
-				url = `${window.location.origin}${pathname}/v${chptr.chapter_volume}/c${chptr.chapter_number}` + (chptr.branch_id ? `?bid=${c.branch_id}` : "");
+                url = `${window.location.origin}${pathname}/v${chptr.chapter_volume}/c${chptr.chapter_number}` + (chptr.branch_id ? `?bid=${c.branch_id}` : "");
             }
 
             let s_data = await ftch(url).then((text) => {
@@ -441,11 +464,16 @@
                 let filename = img.image.split(".")[ img.image.split(".").length - 1 ]
 
 				const pr = await new Promise((resolve, reject) => {
-					let iurl = `${ch_info.servers.main}/${ch_info.img.url}${img.image}`,
-						  b = chptr.branch_id ? `team${chptr.branch_id}` : null,
-						  f = `v${chptr.chapter_volume}_${(+chptr.chapter_number).toLocaleString("en-US", {minimumIntegerDigits: 3, useGrouping: false})}`,
-						  n = `${img.slug.toLocaleString("en-US", {minimumIntegerDigits: 3, useGrouping: false})}.${filename}`,
-						  tmp_img = new Image();
+					let iurl = `${ch_info.servers.main}/${ch_info.img.url}${img.image}`;
+                    let b;
+                    if(bid_param) {
+                        b = null;
+                    } else {
+                        b = chptr.branch_id ? `team${chptr.branch_id}` : null;
+                    }
+					let f = `v${chptr.chapter_volume}_${(+chptr.chapter_number).toLocaleString("en-US", {minimumIntegerDigits: 3, useGrouping: false})}`;
+					let n = `${img.slug.toLocaleString("en-US", {minimumIntegerDigits: 3, useGrouping: false})}.${filename}`;
+					let tmp_img = new Image();
 
                     iurl = iurl.replace('//manga', '/manga');
 
@@ -481,6 +509,10 @@
         filename = filename.replaceAll('/', '⧸');
         filename = filename.replaceAll('"', '＂');
         filename = filename.replaceAll('!', '！');
+
+        if(bid_param) {
+            filename = filename + ' [team' + bid_param + ']';
+        }
 
 		zip.generateAsync({type: "blob"}).then((blob) => {
 			const a = document.createElement("a");
