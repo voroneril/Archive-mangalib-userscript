@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Archive old.mangalib.me
 // @namespace    https://github.com/JumpJets/Archive-mangalib-userscript
-// @version      2.1
+// @version      2.2
 // @description  Download manga from old.mangalib.me and old.hentailib.me as archived zip.
 // @author       X4
 // @include      /^https?:\/\/old\.(?:manga|hentai)lib\.me\/old\/manga\/[\w\-]+(?:\?.+|#.*)?$/
@@ -440,10 +440,10 @@
             let url
             if(typeof window.__AUTH_ID__ != 'undefined') {
                 let pathname = window.location.pathname.replace('/manga', '')
-                url = `${window.location.origin}${pathname}/v${chptr.chapter_volume}/c${chptr.chapter_number}` + '?ui=' + window.__AUTH_ID__ + (chptr.branch_id ? `&bid=${chptr.branch_id}` : "");
+                url = `${window.location.origin}${pathname}/read/v${chptr.chapter_volume}/c${chptr.chapter_number}` + '?ui=' + window.__AUTH_ID__ + (chptr.branch_id ? `&bid=${chptr.branch_id}` : "");
             } else {
                 let pathname = window.location.pathname.replace('/manga', '')
-                url = `${window.location.origin}${pathname}/v${chptr.chapter_volume}/c${chptr.chapter_number}` + (chptr.branch_id ? `?bid=${c.branch_id}` : "");
+                url = `${window.location.origin}${pathname}/read/v${chptr.chapter_volume}/c${chptr.chapter_number}` + (chptr.branch_id ? `?bid=${c.branch_id}` : "");
             }
 
             let s_data = await ftch(url).then((text) => {
