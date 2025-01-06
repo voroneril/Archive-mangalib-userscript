@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         Archive old.mangalib.me
 // @namespace    https://github.com/JumpJets/Archive-mangalib-userscript
-// @version      2.2
+// @version      2.3
 // @description  Download manga from old.mangalib.me and old.hentailib.me as archived zip.
 // @author       X4
-// @include      /^https?:\/\/old\.(?:manga|hentai)lib\.me\/old\/manga\/[\w\-]+(?:\?.+|#.*)?$/
+// @include      /^https?:\/\/old\.(?:manga|hentai)lib\.(?:me|org|info)\/old\/manga\/[\w\-]+(?:\?.+|#.*)?$/
 // @icon         https://icons.duckduckgo.com/ip2/mangalib.me.ico
 // @require      https://cdnjs.cloudflare.com/ajax/libs/jszip/3.9.1/jszip.min.js
 // @grant        none
@@ -437,14 +437,18 @@
 		for (let chptr of chapters) {
 			console.log(`DL volume ${chptr.chapter_volume} chapter ${chptr.chapter_number} (branch ${chptr.branch_id}) of volume ${last.chapter_volume} chapter ${last.chapter_number}`);
 
-            let url
-            if(typeof window.__AUTH_ID__ != 'undefined') {
-                let pathname = window.location.pathname.replace('/manga', '')
-                url = `${window.location.origin}${pathname}/read/v${chptr.chapter_volume}/c${chptr.chapter_number}` + '?ui=' + window.__AUTH_ID__ + (chptr.branch_id ? `&bid=${chptr.branch_id}` : "");
-            } else {
-                let pathname = window.location.pathname.replace('/manga', '')
-                url = `${window.location.origin}${pathname}/read/v${chptr.chapter_volume}/c${chptr.chapter_number}` + (chptr.branch_id ? `?bid=${c.branch_id}` : "");
+            let pathname = window.location.pathname.replace('/manga', '')
+            let url = window.location.origin + pathname;
+            if(window.location.origin.indexOf('hentailib') != -1) {
+                 url = url.replace('.me', '.org')
             }
+            url = url + `/read/v${chptr.chapter_volume}/c${chptr.chapter_number}`
+
+            if(typeof window.__AUTH_ID__ != 'undefined') {
+                url = url + '?ui=' + window.__AUTH_ID__
+            }
+
+            url = url + (chptr.branch_id ? `&bid=${chptr.branch_id}` : "");
 
             let s_data = await ftch(url).then((text) => {
                 let p = new DOMParser();
@@ -465,6 +469,9 @@
 
 				const pr = await new Promise((resolve, reject) => {
 					let iurl = `${ch_info.servers.main}/${ch_info.img.url}${img.image}`;
+                    if(window.location.origin.indexOf('hentailib') != -1) {
+                        iurl = iurl.replace('hentailib.org', 'imglib.info');
+                    }
                     let b;
                     if(bid_param) {
                         b = null;
